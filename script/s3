@@ -1,0 +1,85 @@
+#!/usr/bin/env ruby
+
+require 'rubygems'
+require 'aws-sdk'
+require 'logger'
+require 'fileutils'
+
+require 'optparse'
+
+options = {:region => ENV['AWS_REGION'], :output => '.'}
+OptionParser.new do |opts|
+  opts.banner = "Usage: s3 -b [bucket-name] -r [region] -p [prefix] -o [output]"
+  opts.separator "Please specify environment variable AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY before run this command"
+
+  opts.on("-o", "--output NAME", "output dir for downloading s3 objects, default to '.'") do |v|
+    options[:output] = v
+  end
+
+  opts.on("-y", "--assume_yes", "assume yes to download all files matched from s3") do |v|
+    $assume_yes = true
+  end
+
+  opts.on("-r", "--region REGION", "AWS Region that the bucket belongs to, default to ENV['AWS_REGION']") do |v|
+    options[:region] = v
+  end
+
+  opts.on("-p", "--prefix OBJECT_PREFIX", "only list objects with this prefix") do |f|
+    options[:prefix] = f
+  end
+
+  opts.on("-b", "--bucket BUCKET_NAME", "bucket name") do |f|
+    options[:bucket_name] = f
+  end
+
+  opts.on("-v", "--verbose", "show verbose logs") do |f|
+    $verbose = true
+  end
+
+  opts.on('-h', '--help') do
+    puts opts
+    exit(0)
+  end
+end.parse!
+
+[:bucket_name, :prefix, :region].each do |k|
+  if options[k].nil?
+    puts "Must provide #{k}, see s3 -h for help"
+    exit(1)
+  end
+end
+
+def download_s3_object(o, to_dir)
+  to_file = File.join(to_dir, o.key)
+  FileUtils.mkdir_p(File.dirname(to_file))
+  File.open(to_file, 'w') do |file|
+    o.read { |chunk| file.write(chunk) }
+  end
+end
+
+def s3(region)
+  if $verbose
+    AWS.logger = Logger.new(STDOUT)
+  end
+  AWS::S3.new(:s3_endpoint => "s3-#{region}.amazonaws.com")
+end
+
+AWS.memoize do
+  bucket = s3(options[:region]).buckets[options[:bucket_name]]
+  bucket.objects.with_prefix(options[:prefix]).each do |o|
+    puts "#{o.key}(#{o.content_length/1024}KB)"
+    if $assume_yes
+      download_s3_object(o, options[:output])
+    else
+      puts "download to #{options[:output]}? [y/all/n]"
+      case gets.strip.downcase
+      when 'y'
+        download_s3_object(o, options[:output])
+      when 'all'
+        $assume_yes = true
+      else
+        puts "ignore"
+      end
+    end
+  end
+end

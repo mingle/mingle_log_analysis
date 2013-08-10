@@ -1,0 +1,63 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'fileutils'
+
+options = {:date => Time.now.strftime('%F'), :region => 'us-west-1', :days => 1}
+OptionParser.new do |opts|
+  opts.banner = "Usage: logarchive -e [mingle_saas_environment_name]"
+
+  opts.on("-e", "--env ENVIRONMENT_NAME", "mingle saas env name") do |v|
+    options[:env] = v
+  end
+
+  opts.on("-r", "--region REGION", "AWS Region, default us-west-1") do |v|
+    ENV['AWS_REGION'] = v
+  end
+
+  opts.on("-n", "--days NUMBER", "download given number of days logs (UTC time) from a given date by --date option, default to 1") do |v|
+    options[:days] = v.to_i
+  end
+
+  opts.on("-d", "--date [DATE]", "download specific date logs (UTC time), default to today: #{options[:date]}") do |v|
+    options[:date] = v
+  end
+
+  opts.on('-h', '--help') do
+    puts opts
+    exit(0)
+  end
+
+end.parse!
+
+unless ENV['AWS_REGION']
+  puts "default aws region to us-west-1"
+  ENV['AWS_REGION'] = 'us-west-1'
+end
+
+unless options[:env]
+  puts "Must provide environment name for fetching logs, run 'script/logarchive -h' for details"
+  exit(1)
+end
+
+def download_log(env, dir, date)
+  FileUtils.mkdir_p(dir)
+  puts %x[#{File.dirname(__FILE__) + '/s3'} -p #{date} -b #{env}-log-archive -y -o #{dir}]
+
+  Dir.chdir(dir) do
+    Dir[date + '/**'].each do |f|
+      %x[tar -zxf #{f}]
+    end
+    %x[rm -rf #{date}]
+  end
+end
+
+require 'date'
+
+options[:dir] = "log/#{options[:env]}"
+
+puts "download #{options[:days]} days logs to #{options[:dir]}, start from #{options[:date]} given by --date option"
+options[:days].times do |i|
+  date = Date.parse(options[:date]) - i
+  download_log(options[:env], options[:dir], date.strftime('%F'))
+end
