@@ -1,11 +1,20 @@
 
 function value(e) {
-  return eval(d3.select(e)[0][0].value);
+    v = d3.select(e)[0][0].value
+    if (v) {
+        return JSON.parse(v);
+    } else {
+        return null;
+    }
 }
 
 function draw(xDomainEle, valuesEle) {
-    var xDomain = value(xDomainEle);
-    var values = value(valuesEle);
+    var bin_range = 100;
+    var response_times = value(valuesEle);
+    var title = response_times["title"];
+    var values = response_times["data"].map(function(d){return parseInt(d/bin_range) * bin_range});
+    var xMax = d3.max(values, function(d) { return d })
+    var xDomain = value(xDomainEle) || xMax;
 
     // A formatter for counts.
     var formatCount = d3.format("d");
@@ -27,6 +36,9 @@ function draw(xDomainEle, valuesEle) {
         .domain([0, d3.max(data, function(d) { return d.y; })])
         .range([height, 0]);
 
+    var yAxis = d3.svg.axis()
+        .scale(y)
+        .orient("left");
     var xAxis = d3.svg.axis()
         .scale(x)
         .orient("bottom");
@@ -37,6 +49,18 @@ function draw(xDomainEle, valuesEle) {
         .append("g")
         .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
+    svg.append("text")
+        .attr("dy", "0.75em")
+        .attr("y", 6)
+        .attr("x", width/2 - 50)
+        .attr("text-anchor", "middle")
+        .text(title);
+    svg.append("text")
+        .attr("dy", ".75em")
+        .attr("y", 6)
+        .attr("x", width - 50)
+        .attr("text-anchor", "middle")
+        .text("x-max: " + xMax);
     var bar = svg.selectAll(".bar")
         .data(data)
         .enter().append("g")
@@ -59,4 +83,8 @@ function draw(xDomainEle, valuesEle) {
         .attr("class", "x axis")
         .attr("transform", "translate(0," + height + ")")
         .call(xAxis);
+    svg.append("g")
+        .attr("class", "y axis")
+        .attr("transform", "translate(0,0)")
+        .call(yAxis);
 }

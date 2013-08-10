@@ -5,12 +5,14 @@ require 'time'
 require 'evidence'
 require 'mingle_saas_log_parser'
 require 'json'
+require 'fileutils'
 
 def dumpling_logs
   @dumpling_logs ||= MingleSaasLogParser.new('log/dumpling/**/mingle-cluster*')
 end
 
 def output(name, data)
+  FileUtils.mkdir_p('out')
   File.open("out/#{name}", 'w') do |f|
     case data
     when String
@@ -39,18 +41,28 @@ namespace :analysis do
 
   desc "response times, default range window 200 milliseconds"
   task :response_times do
-    time_range = 3600 * 24 # 1 day
+    time_range = 3600 * 24 * 3 # 1 day
+    avg_range = 60 * 3
     response_times = lambda do |block|
+      avgs = []
       responses = []
-      start_at, end_at = nil
+      avg_start, start_at, end_at = nil
       lambda do |action|
         end_at = Time.strptime(action[:request][:timestamp], "%Y-%m-%d %H:%M:%S")
         start_at = end_at if start_at.nil?
+        avg_start = end_at if avg_start.nil?
+
         responses << action[:response][:completed_time].to_i
-        if end_at - start_at >= time_range
-          block.call(start_at..end_at, responses)
+        if end_at - avg_start >= avg_range
+          count = responses.size
+          avgs << responses.reduce(:+)/count
           responses = []
-          start_at, end_at = nil
+          avg_start = nil
+        end
+
+        if end_at - start_at >= time_range
+          block.call(start_at..end_at, avgs)
+          start_at = nil
         end
       end
     end
@@ -58,9 +70,14 @@ namespace :analysis do
     Evidence.stream(dumpling_logs.actions_stream, response_times).each do |time_range, responses|
       t1 = time_range.min.strftime("%m-%d %H:%M")
       t2 = time_range.max.strftime("%m-%d %H:%M")
-      tt = "#{t1}-#{t2}"
-      puts tt
-      output("responses_#{tt.gsub(/[^\d]/, '_')}", responses.to_json)
+      tt = "from #{t1} to #{t2}"
+      fname = "responses_#{avg_range}_#{tt.gsub(/[^\d\w]/, '_')}"
+      puts fname
+      r = {
+        title: "Avg Response Time (Range: #{avg_range}) #{tt}",
+        data: responses
+      }
+      output(fname, r.to_json)
     end
   end
 
