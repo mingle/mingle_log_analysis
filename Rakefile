@@ -4,6 +4,7 @@ $LOAD_PATH << File.expand_path(File.join(File.dirname(__FILE__), 'lib'))
 require 'time'
 require 'evidence'
 require 'mingle_saas_log_parser'
+require 'json'
 
 def dumpling_logs
   @dumpling_logs ||= MingleSaasLogParser.new('log/dumpling/**/mingle-cluster*')
@@ -11,8 +12,15 @@ end
 
 def output(name, data)
   File.open("out/#{name}", 'w') do |f|
-    data.each do |line|
-      f.write("#{line}\n")
+    case data
+    when String
+      f.write(data)
+    when Array
+      data.each do |line|
+        f.write("#{line}\n")
+      end
+    else
+      raise "Unknown data type #{data.class}"
     end
   end
 end
@@ -29,33 +37,30 @@ namespace :analysis do
     end
   end
 
-  desc "response distribution, default range window 200 milliseconds"
-  task :response_distribution do
-    bin_range = 100        # 0.1 second
+  desc "response times, default range window 200 milliseconds"
+  task :response_times do
     time_range = 3600 * 24 # 1 day
-    distribution = lambda do |block|
-      distribution = Hash.new {|h,k| h[k] = 0}
+    response_times = lambda do |block|
+      responses = []
       start_at, end_at = nil
       lambda do |action|
         end_at = Time.strptime(action[:request][:timestamp], "%Y-%m-%d %H:%M:%S")
         start_at = end_at if start_at.nil?
-        bin = action[:response][:completed_time].to_i/bin_range * bin_range
-        distribution[bin] += 1
+        responses << action[:response][:completed_time].to_i
         if end_at - start_at >= time_range
-          block.call(start_at..end_at, distribution)
-
-          distribution = Hash.new {|h,k| h[k] = 0}
+          block.call(start_at..end_at, responses)
+          responses = []
           start_at, end_at = nil
         end
       end
     end
-    Evidence.stream(dumpling_logs.actions_stream, distribution).each do |time_range, distribution|
+
+    Evidence.stream(dumpling_logs.actions_stream, response_times).each do |time_range, responses|
       t1 = time_range.min.strftime("%m-%d %H:%M")
       t2 = time_range.max.strftime("%m-%d %H:%M")
       tt = "#{t1}-#{t2}"
       puts tt
-      p distribution
-      output("response_distribution_#{tt}", distribution.keys.sort.map{|k| "#{k} #{distribution[k]}"})
+      output("responses_#{tt.gsub(/[^\d]/, '_')}", responses.to_json)
     end
   end
 
