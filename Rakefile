@@ -41,8 +41,8 @@ namespace :analysis do
 
   desc "response times, default range window 200 milliseconds"
   task :response_times do
-    time_range = 3600 * 24 * 3 # 1 day
-    avg_range = 60 * 3
+    time_range = 3600 * 24 # 1 day
+    avg_range = 60
     response_times = lambda do |block|
       avgs = []
       responses = []
