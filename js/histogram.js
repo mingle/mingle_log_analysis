@@ -16,6 +16,8 @@ function draw(xDomainEle, valuesEle) {
     var xMax = d3.max(values, function(d) { return d })
     var xDomain = value(xDomainEle) || xMax;
 
+    var avg = parseInt(values.reduce(function(a,b){return a+b;}) / values.length)
+
     // A formatter for counts.
     var formatCount = d3.format("d");
 
@@ -87,4 +89,11 @@ function draw(xDomainEle, valuesEle) {
         .attr("class", "y axis")
         .attr("transform", "translate(0,0)")
         .call(yAxis);
+    medium = svg.append("g")
+        .attr("class", "medium")
+        .attr("transform", "translate("+x(avg)+",0)");
+    medium.append("rect")
+          .attr("x", 1)
+          .attr("width", 1)
+          .attr("height", height);
 }
