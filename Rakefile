@@ -8,7 +8,7 @@ require 'json'
 require 'fileutils'
 
 def dumpling_logs
-  @dumpling_logs ||= MingleSaasLogParser.new('log/dumpling/**/mingle-cluster*')
+  @dumpling_logs ||= MingleSaasLogParser.new
 end
 
 def output(name, data)
@@ -52,7 +52,33 @@ namespace :analysis do
     end
   end
 
-  desc "response times, default range window 200 milliseconds"
+  def normal_distribution
+    lambda do |output|
+      lambda do |range, responses|
+        count = responses.size
+        medium = responses.reduce(:+) / count
+        sum = responses.inject(0) {|accum, i| accum + (i - medium)**2 }
+        sample_variance = sum.to_f/count
+        sd = Math.sqrt(sample_variance)
+        output[range, medium, sd, count]
+      end
+    end
+  end
+
+  desc 'avg response time normal distribution, time_window: one distribution time window, 1 day default; avg_time_window: avg response time for normal distribution, default 60 seconds'
+  task :avg_response_distribution, [:time_window, :avg_time_window] do |_, args|
+    time_window = 3600 * 24 * (args.time_window || 1) # 1 day
+    avg_time_window = args.avg_time_window || 60      # 1 minute
+    stream = dumpling_logs.sliced_actions_stream(time_window) | avg_response_times(avg_time_window) | normal_distribution
+    stream.each do |range, medium, sd, count|
+      t1 = range.min.strftime("%m-%d %H:%M")
+      t2 = range.max.strftime("%m-%d %H:%M")
+      tt = "from #{t1} to #{t2}"
+      puts "#{tt}, medium: #{medium}, SD: #{sd}, count: #{count}"
+    end
+  end
+
+  desc "response times, default range window: 1 day, default avg response time window: 60 seconds"
   task :response_times do
     time_window = 3600 * 24 # 1 day
     avg_time_window = 60    # 1 minute

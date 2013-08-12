@@ -3,10 +3,6 @@ require 'evidence'
 class MingleSaasLogParser
   include Evidence
 
-  def initialize(log_files)
-    @files = Dir[log_files].select{|f| f =~ /mingle-cluster/}
-  end
-
   def sliced_actions_stream(time_window)
     actions_stream | slice_stream(lambda {|action| action[:request][:timestamp]}, time_window)
   end
@@ -15,12 +11,19 @@ class MingleSaasLogParser
     request_log_stream | rails_action_parser(pid, message) | request_timestamp_parser
   end
 
-  def request_log_stream
-    logs = @files.reject(&background_log_files).map do |f|
-      stream(File.new(f)) | log_parser(request_log_pattern)
+  def hourly_logs
+    lambda do |output|
+      lambda do |dir|
+        logs = Dir["#{dir}/*"].select{|f| f=~/mingle-cluster/}.reject(&background_log_files).map do |f|
+          stream(File.new(f)) | log_parser(request_log_pattern)
+        end
+        merge_streams(logs, lambda {|log1, log2| log1[:timestamp] <=> log2[:timestamp]}).each(&output)
+      end
     end
-    puts "request log files: #{logs.size}"
-    merge_streams(logs, lambda {|log1, log2| log1[:timestamp] <=> log2[:timestamp]})
+  end
+
+  def request_log_stream
+    stream(Dir['log/dumpling/*'].sort) | hourly_logs
   end
 
   def background_log_files
