@@ -7,13 +7,17 @@ class MingleSaasLogParser
     @files = Dir[log_files].select{|f| f =~ /mingle-cluster/}
   end
 
+  def sliced_actions_stream(time_window)
+    actions_stream | slice_stream(lambda {|action| action[:request][:timestamp]}, time_window)
+  end
+
   def actions_stream
-    stream(request_log_stream, rails_action_parser(pid, message))
+    request_log_stream | rails_action_parser(pid, message) | request_timestamp_parser
   end
 
   def request_log_stream
     logs = @files.reject(&background_log_files).map do |f|
-      stream(File.new(f), log_parser(request_log_pattern))
+      stream(File.new(f)) | log_parser(request_log_pattern)
     end
     puts "request log files: #{logs.size}"
     merge_streams(logs, lambda {|log1, log2| log1[:timestamp] <=> log2[:timestamp]})
