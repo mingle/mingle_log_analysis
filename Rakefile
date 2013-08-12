@@ -96,6 +96,33 @@ namespace :analysis do
     end
   end
 
+  def processing_rate_analysis
+    processing = []
+    prev = nil
+    lambda do |output|
+      lambda do |action|
+        timestamp = action[:request][:timestamp]
+        prev ||= timestamp
+        processing << {action: action, completed_at: timestamp + action[:response][:completed_time].to_i / 1000}
+        if prev < timestamp
+          prev = timestamp
+          processing.reject! { |pa| pa[:completed_at] < timestamp }
+          output.call(timestamp, processing.size)
+        end
+      end
+    end
+  end
+  task :processing_rate do
+    stream = dumpling_logs.actions_stream | processing_rate_analysis
+    File.open('out/processing_rate', 'w') do |f|
+      stream.each do |time, rate|
+        t = time.strftime("%Y-%m-%d %H:%M:%S")
+        puts "#{t}: #{'.' * rate}" if rate > 2
+        f.write("#{t},#{rate}\n")
+      end
+    end
+  end
+
   desc "output little's law analysis, default timewindow 3600 seconds"
   task :littles_law, [:time_window] do |_, args|
     time_window = (args.time_window || 3600).to_i
