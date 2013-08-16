@@ -4,26 +4,18 @@ class MingleSaasLogParser
   include Evidence
 
   def sliced_actions_stream(time_window)
-    actions_stream | slice_stream(lambda {|action| action[:request][:timestamp]}, time_window)
+    actions_stream.chunk(&by_time_window(time_window))
   end
 
   def actions_stream
-    request_log_stream | rails_action_parser(pid, message) | request_timestamp_parser
-  end
-
-  def hourly_logs
-    lambda do |output|
-      lambda do |dir|
-        logs = Dir["#{dir}/*"].select{|f| f=~/mingle-cluster/}.reject(&background_log_files).map do |f|
-          stream(File.new(f)) | log_parser(request_log_pattern)
-        end
-        merge_streams(logs, lambda {|log1, log2| log1[:timestamp] <=> log2[:timestamp]}).each(&output)
-      end
-    end
-  end
-
-  def request_log_stream
-    stream(Dir['log/dumpling/*'].sort) | hourly_logs
+    Dir['log/dumpling/*'].sort.lazy.map do |dir|
+      logs = Dir["#{dir}/*"].select{|f| f=~/mingle-cluster/}.reject(&background_log_files)
+      logs.lazy.map do |f|
+        File.new(f).lazy.map(&parse_log(request_log_pattern)).compact.
+          map(&rails_action_parser(pid, message)).compact.
+          map(&request_timestamp_parser)
+      end.flat_map { |a| a }.sort_by {|a| a[:request][:timestamp]}
+    end.flat_map {|a| a}
   end
 
   def background_log_files
@@ -46,7 +38,7 @@ class MingleSaasLogParser
     /^
       \w{3}\s+\d+\s+\d{2}\:\d{2}\:\d{2}\s+
       (?<host_name>[^\s]+)\s+
-      [\w-_]+\:\s+
+      [-_\w]+\:\s+
       INFO\s+
       \[(?<timestamp>[^\]]+)\]\s+
       \[(?<thread_label>[^\]]+)\]\s+
@@ -60,10 +52,10 @@ class MingleSaasLogParser
     /^
       \w{3}\s+\d+\s+\d{2}\:\d{2}\:\d{2}\s+
       (?<host_name>[^\s]+)\s+
-      [\w-_]+\:\s+
+      [-_\w]+\:\s+
       INFO\s+
       \[(?<timestamp>[^\]]+)\]\s+
-      \[[\w-_\d]+\[(?<thread_label>[^\]]+)\]\]\s+
+      \[[-_\d\w]+\[(?<thread_label>[^\]]+)\]\]\s+
       \[(?<log4j_label>[^\]]+)\]\s+
       \[tenant\:(?<tenant>[^\]]*)\]\s+
       (?<message>.*)
