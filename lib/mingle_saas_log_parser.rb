@@ -7,11 +7,15 @@ class MingleSaasLogParser
     actions_stream.chunk(&by_time_window(time_window))
   end
 
-  def actions_stream
-    Dir['log/dumpling/*'].sort.lazy.map do |dir|
-      logs = Dir["#{dir}/*"].select{|f| f=~/mingle-cluster/}.reject(&background_log_files)
+  def log_stream(file)
+    File.new(file).lazy.map(&syslog_parser).compact
+  end
+
+  def actions_stream(dirs='log/dumpling/*')
+    Dir[dirs].sort.lazy.map do |dir|
+      logs = Dir["#{dir}/mingle-cluster*.log"]
       logs.lazy.map do |f|
-        File.new(f).lazy.map(&parse_log(request_log_pattern)).compact.
+        File.new(f).lazy.map(&syslog_parser).compact.map(&parse_log(request_log_pattern)).compact.
           map(&rails_action_parser(pid, message)).compact.
           map(&request_timestamp_parser)
       end.flat_map { |a| a }.sort_by {|a| a[:request][:timestamp]}
@@ -32,6 +36,46 @@ class MingleSaasLogParser
 
   def message
     lambda {|log| log[:message]}
+  end
+
+  def syslog_parser
+    prev = nil
+    lambda do |log|
+      if log =~ /\.\.\.$/
+        if prev
+          if log =~ continue_request_log_pattern
+            prev = prev[0..-4] + $2
+          else
+            warn "error: #{prev}\n#{log}"
+            prev = log
+          end
+        else
+          prev = log
+        end
+        nil
+      elsif prev
+        if log =~ continue_request_log_pattern
+          (prev[0..-4] + $2).tap do |r|
+            prev = nil
+          end
+        else
+          warn "error: #{prev}\n#{log}"
+          prev = nil
+          log
+        end
+      else
+        log
+      end
+    end
+  end
+
+  def continue_request_log_pattern
+    /^
+      \w{3}\s+\d+\s+\d{2}\:\d{2}\:\d{2}\s+
+      (?<host_name>[^\s]+)\s+
+      \.\.\.
+      (?<message>.*)
+    $/x
   end
 
   def request_log_pattern

@@ -8,7 +8,7 @@ GEM
     clbustos-rtf (0.4.2)
     dirty-memoize (0.0.4)
     distribution (0.7.0)
-    evidence (0.0.5)
+    evidence (0.0.8)
     extendmatrix (0.3.1)
     fastercsv (1.5.5)
     gsl (1.15.3)

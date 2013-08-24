@@ -70,19 +70,90 @@ namespace :analysis do
       if prev < timestamp
         prev = timestamp
         processing.reject! { |pa| pa[:completed_at] < timestamp }
-        [timestamp, processing.size]
+        [timestamp, processing.dup]
       end
+    end
+  end
+
+  def warn(msg)
+    # puts msg
+  end
+
+  task :busy_actions, [:dirs] do |_, args|
+    dirs = args.dirs || 'log/dumpling/*'
+    stream = dumpling_logs.actions_stream(dirs).map(&processing_rate_analysis).compact
+    data = Hash.new {|h,k| h[k] = 0}
+    stream.each do |time, processing|
+      t = time.strftime("%Y-%m-%d %H:%M:%S")
+      if processing.size > 4
+        processing.each do |log|
+          c = log[:action][:request][:controller]
+          a = log[:action][:request][:action]
+          f = if f = log[:action][:request][:format]
+                " #{f}"
+              end
+          key = "#{c}##{a}#{f}"
+          data[key] += 1
+        end
+      end
+    end
+    File.open('out/busy_actions', 'w') do |f|
+      data.each do |k, v|
+        f.puts("#{k}: #{v}")
+      end
+    end
+  end
+
+  task :busy_actions_chart do
+    data = File.new('out/busy_actions').map do |l|
+      l.split(': ')
+    end.map {|k, v| [k, v.to_i]}
+    all = data.map{|k,v| v}.reduce(:+)
+    chart = data.sort_by{|k,v| v}.reverse.first(10).map do |k, v|
+      # x = (v * 10000/all).to_f/100
+      [k.gsub('Controller', ''), v]
+    end
+    chart.unshift(['Request', 'Count'])
+    puts all
+    p chart
+  end
+
+  task :busy_actions_rate do
+    data = File.new('out/busy_actions').map do |l|
+      l.split(': ')
+    end.map {|k, v| [k, v.to_i]}
+    all = data.map{|k,v| v}.reduce(:+)
+    data.sort_by{|k,v| v}.reverse.each do |k, v|
+      puts "#{k}: #{'%.2f' % (v.to_f * 100/all)}"
     end
   end
 
   task :processing_rate do
     stream = dumpling_logs.actions_stream.map(&processing_rate_analysis).compact
     File.open('out/processing_rate', 'w') do |f|
-      stream.each do |time, rate|
+      stream.each do |time, processing|
         t = time.strftime("%Y-%m-%d %H:%M:%S")
-        puts "#{t}: #{'.' * rate}" if rate > 2
-        f.write("#{t},#{rate}\n")
+        puts "#{t}: #{'.' * processing.size}" if processing.size > 4
+        f.write("#{t},#{processing.size}\n")
       end
+    end
+  end
+
+  task :test, [:dirs] do |_, args|
+    s = dumpling_logs.actions_stream(args.dirs)
+    File.open('test.log', 'w') do |f|
+      s.each do |action|
+        f.puts action[:logs].last[:origin]
+      end
+    end
+  end
+
+  task :slow_requests, [:threshold] do |_, args|
+    threshold = args.threshold.to_i * 1000
+    stream = dumpling_logs.actions_stream.select{|a| a[:response][:completed_time].to_i > threshold}.each do |a|
+      puts "#{a[:request][:timestamp]} #{a[:request][:controller]}##{a[:request][:action]} => #{a[:response][:completed_time]}"
+      puts "\t#{a[:request][:remote_addr]}"
+      puts "\t#{a[:response][:url]}"
     end
   end
 
