@@ -3,7 +3,7 @@
 require 'optparse'
 require 'fileutils'
 
-options = {:date => Time.now.strftime('%F'), :region => 'us-west-1', :days => 1}
+options = {:date => Time.now.utc.strftime('%F'), :region => 'us-west-1', :days => 1}
 OptionParser.new do |opts|
   opts.banner = "Usage: logarchive -e [mingle_saas_environment_name]"
 
