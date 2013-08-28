@@ -128,12 +128,22 @@ namespace :analysis do
     end
   end
 
-  task :processing_rate do
-    stream = dumpling_logs.actions_stream.map(&processing_rate_analysis).compact
+  task :processing_rate, [:dirs, :threshold, :logdetails] do |_, args|
+    dirs = args.dirs || 'log/**/*'
+    threshold = (args.threshold || 3).to_i
+    logdetails = args.logdetails == 'true'
+    stream = dumpling_logs.actions_stream(dirs).map(&processing_rate_analysis).compact
     File.open('out/processing_rate', 'w') do |f|
       stream.each do |time, processing|
         t = time.strftime("%Y-%m-%d %H:%M:%S")
-        puts "#{t}: #{'.' * processing.size}" if processing.size > 4
+        if processing.size > threshold
+          puts "#{t}: #{'.' * processing.size}" 
+          if logdetails
+            processing.each do |log|
+              puts "\t#{log[:action][:response][:url]}"
+            end
+          end
+        end
         f.write("#{t},#{processing.size}\n")
       end
     end
