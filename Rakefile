@@ -6,7 +6,6 @@ require 'evidence'
 require 'mingle_saas_log_parser'
 require 'json'
 require 'fileutils'
-require 'statsample'
 
 def dumpling_logs
   @dumpling_logs ||= MingleSaasLogParser.new
@@ -137,7 +136,7 @@ namespace :analysis do
       stream.each do |time, processing|
         t = time.strftime("%Y-%m-%d %H:%M:%S")
         if processing.size > threshold
-          puts "#{t}: #{'.' * processing.size}" 
+          puts "#{t}: #{'.' * processing.size}"
           if logdetails
             processing.each do |log|
               puts "\t#{log[:action][:response][:url]}"
