@@ -8,3 +8,34 @@ task :slow_requests, [:threshold] do |_, args|
     puts "\t#{a[:response][:url]}"
   end
 end
+
+task :requests_by_remote_addr do
+  time_window = 3600
+  threshold = 600
+  sites_data = Hash.new{|h,k| h[k]=0}
+  stream = MingleSaasLogParser.new.sliced_actions_stream(time_window).each do |range, actions|
+    groups = actions.group_by { |a| a[:request][:remote_addr] }.
+      reject{|g, as| as.size < threshold}.
+      sort_by {|g, as| as.size}.
+      reverse
+
+    puts "#{range} (top 5 > #{threshold} calls): "
+    groups.first(5).each do |g, as|
+      # next if g == '206.123.77.253'
+      sites = as.map{|a|as.first[:logs].first[:tenant]}.uniq.inspect
+      actions = as.map{|a|"#{a[:request][:controller]}##{a[:request][:action]}"}
+      actions_count = actions.uniq.size
+      actions = actions.group_by{|a| a}.map{|a,ag| [a, ag.size]}.sort_by{|a,size| size}.reverse
+
+      as.each do |a|
+        sites_data[as.first[:logs].first[:tenant]] += 1
+      end
+
+      puts "\t#{g}: #{as.size} requests across #{sites} sites\n\t\tactions (top 5): #{actions.first(5).map{|a| a.join(": ")}.join(", ")}"
+    end
+  end
+
+  sites_data.to_a.sort_by{|s, c| c}.reverse.each do |s, count|
+    puts "#{s}: #{count}"
+  end
+end
