@@ -22,3 +22,7 @@ def output(name, data)
     end
   end
 end
+
+def request_action(action)
+  "#{action[:request][:controller]}##{action[:request][:action]}"
+end

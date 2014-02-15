@@ -9,6 +9,30 @@ task :slow_requests, [:threshold] do |_, args|
   end
 end
 
+task :apis_sites do
+  sum_cta = 0
+  all = 0
+  MingleSaasLogParser.new.actions_stream.select do |a|
+    a[:request][:format] == 'xml'
+  end.group_by do |a|
+    a[:logs][0][:tenant]
+  end.sort_by do |_, actions|
+    actions.size
+  end.each do |tenant, actions|
+    ag = actions.group_by do |a|
+      a[:request][:remote_addr] =~ /^72.52.94/ || a[:request][:remote_addr] =~ /^65.49.44/ ? 'CTA' : a[:request][:remote_addr]
+    end
+    sum_cta += Array(ag['CTA']).size
+    all += ag.values.map{|as| as.size}.reduce(:+)
+    ags = ag.map do |t, as|
+      "#{t}: #{as.size}"
+    end
+    puts "#{tenant}: #{ags.join("; ")}"
+  end
+  puts "all: #{all}"
+  puts "cta: #{sum_cta}, #{"%.0f%" % (100.0 * sum_cta/all)}"
+end
+
 task :requests_by_remote_addr do
   time_window = 3600
   threshold = 600

@@ -17,7 +17,8 @@ class MingleSaasLogParser
       logs.lazy.map do |f|
         File.new(f).lazy.map(&syslog_parser).compact.map(&parse_log(request_log_pattern)).compact.
           map(&rails_action_parser(pid, message)).compact.
-          map(&request_timestamp_parser)
+          map{|action| action[:request][:timestamp] += ' UTC'; action}.
+          map(&request_timestamp_parser("%Y-%m-%d %H:%M:%S %z"))
       end.flat_map { |a| a }.sort_by {|a| a[:request][:timestamp]}
     end.flat_map {|a| a}
   end
